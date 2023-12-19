@@ -1,10 +1,20 @@
 # image llm tests
 
-## Open Clip
+## Prerequisites
+- docker
+
+## Infra
+- gcloud artifact registry: https://console.cloud.google.com/artifacts/docker/image-llm-408613/europe-west3/llms?hl=de&project=image-llm-408613
+  
+  check [auth docs](https://cloud.google.com/artifact-registry/docs/docker/authentication?hl=de) for docker authentication
+
+
+## LLMs
+### Open Clip
 
 https://github.com/mlfoundations/open_clip
 
-    docker-compose -f docker-compose.open-clip.yaml up
+    docker compose -f docker-compose.open-clip.yaml up
 
 Click URL in log-output to open Jupyter notebook
 
@@ -14,11 +24,11 @@ Unfortunately this model is not useful for our case, since the output is limited
 descriptive words.
 
 
-## Qwen-VL
+### Qwen-VL
 
 https://github.com/QwenLM/Qwen-VL
 
     cd qwen-vl
     ./clone-qwen-vl-repo.sh
     cd ..
-    docker-compose -f docker-compose.qwen-vl-chat.yaml up
+    docker compose -f docker-compose.qwen-vl-chat.yaml up
