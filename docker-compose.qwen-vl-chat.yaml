@@ -1,0 +1,9 @@
+version: "3.9"
+
+services:
+  qwen-vl-chat:
+    build:
+        context: ./qwen-vl/Qwen-VL
+        dockerfile: Dockerfile.qwenopenai
+    ports:
+      - "8080:8080"
