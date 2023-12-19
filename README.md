@@ -19,6 +19,6 @@ descriptive words.
 https://github.com/QwenLM/Qwen-VL
 
     cd qwen-vl
-    git clone git@github.com:QwenLM/Qwen-VL.git
-
+    ./clone-qwen-vl-repo.sh
+    cd ..
     docker-compose -f docker-compose.qwen-vl-chat.yaml up
