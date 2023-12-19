@@ -28,7 +28,13 @@ descriptive words.
 
 https://github.com/QwenLM/Qwen-VL
 
+to build and run locally:
+
     cd qwen-vl
     ./clone-qwen-vl-repo.sh
     cd ..
     docker compose -f docker-compose.qwen-vl-chat.yaml up
+
+or run:
+
+    docker run --gpus all -p 8080:8080 europe-west3-docker.pkg.dev/image-llm-408613/llms/qwen-vl-chat:1.0
