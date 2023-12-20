@@ -48,7 +48,7 @@ RUN pip install -r requirements_openai_api.txt
 ADD --chown=20001:20001 https://github.com/StellarCN/scp_zh/raw/master/fonts/SimSun.ttf ./
 # COPY --chown=20001:20001 SimSun.ttf ./
 # copy main app
-COPY --chown=20001:20001 qwen-vl/Qwen-VL/openai_api.py ./
+COPY --chown=20001:20001 openai_api.py ./
 
 EXPOSE 8080
 CMD ["python3", "openai_api.py", "-c", "./Qwen-VL-Chat", "--server-name", "0.0.0.0", "--server-port", "8080"]
