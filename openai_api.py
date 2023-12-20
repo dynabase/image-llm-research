@@ -16,7 +16,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sse_starlette.sse import EventSourceResponse
+# from sse_starlette.sse import EventSourceResponse
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers.generation import GenerationConfig
 
@@ -55,6 +55,12 @@ class ModelList(BaseModel):
     data: List[ModelCard] = []
 
 
+class ChatMessageV2(BaseModel):
+    role: Literal["user", "assistant", "system", "function"]
+    content: List[Dict]
+    function_call: Optional[Dict] = None
+
+
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant", "system", "function"]
     content: Optional[str]
@@ -64,6 +70,17 @@ class ChatMessage(BaseModel):
 class DeltaMessage(BaseModel):
     role: Optional[Literal["user", "assistant", "system"]] = None
     content: Optional[str] = None
+
+
+class ChatCompletionRequestV2(BaseModel):
+    model: str
+    messages: List[ChatMessageV2]
+    functions: Optional[List[Dict]] = None
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
+    max_length: Optional[int] = None
+    stream: Optional[bool] = False
+    stop: Optional[List[str]] = None
 
 
 class ChatCompletionRequest(BaseModel):
@@ -272,7 +289,7 @@ def parse_messages(messages, functions):
             for t in dummy_thought.values():
                 t = t.lstrip("\n")
                 if bot_msg.startswith(t) and ("\nAction: " in bot_msg):
-                    bot_msg = bot_msg[len(t) :]
+                    bot_msg = bot_msg[len(t):]
             history.append([usr_msg, bot_msg])
         else:
             raise HTTPException(
@@ -296,8 +313,8 @@ def parse_response(response):
             # because the output text may have discarded the stop word.
             response = response.rstrip() + "\nObservation:"  # Add it back.
         k = response.rfind("\nObservation:")
-        func_name = response[i + len("\nAction:") : j].strip()
-        func_args = response[j + len("\nAction Input:") : k].strip()
+        func_name = response[i + len("\nAction:"): j].strip()
+        func_args = response[j + len("\nAction Input:"): k].strip()
     if func_name:
         choice_data = ChatCompletionResponseChoice(
             index=0,
@@ -311,7 +328,7 @@ def parse_response(response):
         return choice_data
     z = response.rfind("\nFinal Answer: ")
     if z >= 0:
-        response = response[z + len("\nFinal Answer: ") :]
+        response = response[z + len("\nFinal Answer: "):]
     choice_data = ChatCompletionResponseChoice(
         index=0,
         message=ChatMessage(role="assistant", content=response),
@@ -342,14 +359,38 @@ def text_complete_last_message(history, stop_words_ids):
     output = model.generate(input_ids, stop_words_ids=stop_words_ids).tolist()[0]
     output = tokenizer.decode(output, errors="ignore")
     assert output.startswith(prompt)
-    output = output[len(prompt) :]
+    output = output[len(prompt):]
     output = trim_stop_words(output, ["<|endoftext|>", im_end])
     print(f"<completion>\n{prompt}\n<!-- *** -->\n{output}\n</completion>")
     return output
 
 
+"""
+{
+    "model": "model",
+    "messages": [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Describe this image in detail"
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "https://image01.bonprix.de/assets/687x962/1609163201/18297432-qZATmgaq.jpg"
+                    }
+                }
+            ]
+        }
+    ]
+}
+"""
+
+
 @app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
-async def create_chat_completion(request: ChatCompletionRequest):
+async def create_chat_completion_v2(request: ChatCompletionRequestV2):
     global model, tokenizer
 
     stop_words = add_extra_stop_words(request.stop)
@@ -358,7 +399,23 @@ async def create_chat_completion(request: ChatCompletionRequest):
         if "Observation:" not in stop_words:
             stop_words.append("Observation:")
 
-    query, history = parse_messages(request.messages, request.functions)
+    messages = []
+
+    # loop through message content of first message
+    for content in request.messages[0].content:
+        if content['type'] == 'text':
+            messages.append({'text': content['text']});
+        elif content['type'] == 'image_url':
+            messages.append({'image': content['image_url']['url']});
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid request: Expecting at least one user message.",
+            )
+
+    # query, history = parse_messages(request.messages, request.functions)
+    query = tokenizer.from_list_format(messages)
+    history = None
 
     if request.stream:
         if request.functions:
@@ -375,8 +432,8 @@ async def create_chat_completion(request: ChatCompletionRequest):
         response = text_complete_last_message(history, stop_words_ids=stop_words_ids)
     else:
         response, _ = model.chat(
-            tokenizer,
-            query,
+            tokenizer=tokenizer,
+            query=query,
             history=history,
             stop_words_ids=stop_words_ids,
             append_history=False,
@@ -398,8 +455,58 @@ async def create_chat_completion(request: ChatCompletionRequest):
     )
 
 
+# @app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
+# async def create_chat_completion(request: ChatCompletionRequest):
+#     global model, tokenizer
+#
+#     stop_words = add_extra_stop_words(request.stop)
+#     if request.functions:
+#         stop_words = stop_words or []
+#         if "Observation:" not in stop_words:
+#             stop_words.append("Observation:")
+#
+#     query, history = parse_messages(request.messages, request.functions)
+#
+#     if request.stream:
+#         if request.functions:
+#             raise HTTPException(
+#                 status_code=400,
+#                 detail="Invalid request: Function calling is not yet implemented for stream mode.",
+#             )
+#         # generate = predict(query, history, request.model, stop_words)
+#         # return EventSourceResponse(generate, media_type="text/event-stream")
+#         raise HTTPException(status_code=400, detail="Stream request is not supported currently.")
+#
+#     stop_words_ids = [tokenizer.encode(s) for s in stop_words] if stop_words else None
+#     if query is _TEXT_COMPLETION_CMD:
+#         response = text_complete_last_message(history, stop_words_ids=stop_words_ids)
+#     else:
+#         response, _ = model.chat(
+#             tokenizer,
+#             query,
+#             history=history,
+#             stop_words_ids=stop_words_ids,
+#             append_history=False,
+#             top_p=request.top_p,
+#             temperature=request.temperature,
+#         )
+#         print(f"<chat>\n{history}\n{query}\n<!-- *** -->\n{response}\n</chat>")
+#     response = trim_stop_words(response, stop_words)
+#     if request.functions:
+#         choice_data = parse_response(response)
+#     else:
+#         choice_data = ChatCompletionResponseChoice(
+#             index=0,
+#             message=ChatMessage(role="assistant", content=response),
+#             finish_reason="stop",
+#         )
+#     return ChatCompletionResponse(
+#         model=request.model, choices=[choice_data], object="chat.completion"
+#     )
+
+
 async def predict(
-    query: str, history: List[List[str]], model_id: str, stop_words: List[str]
+        query: str, history: List[List[str]], model_id: str, stop_words: List[str]
 ):
     global model, tokenizer
     choice_data = ChatCompletionResponseStreamChoice(
@@ -466,7 +573,7 @@ def _get_args():
         type=str,
         default="127.0.0.1",
         help="Demo server name. Default: 127.0.0.1, which is only visible from the local computer."
-        " If you want other computers to access your server, use 0.0.0.0 instead.",
+             " If you want other computers to access your server, use 0.0.0.0 instead.",
     )
 
     args = parser.parse_args()
